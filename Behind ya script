@@ -1,0 +1,92 @@
+--// Far From Ya v1.0
+local Players = game:GetService("Players")
+local PathfindingService = game:GetService("PathfindingService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local Root = Character:WaitForChild("HumanoidRootPart")
+
+-- UI Setup
+local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+ScreenGui.Name = "FarFromYaGui"
+
+local Frame = Instance.new("Frame", ScreenGui)
+Frame.Size = UDim2.new(0, 180, 0, 60)
+Frame.Position = UDim2.new(0, 20, 0.5, -30)
+Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Frame.Active = true
+Frame.Draggable = true
+Frame.BorderSizePixel = 0
+
+local ToggleButton = Instance.new("TextButton", Frame)
+ToggleButton.Size = UDim2.new(1, 0, 0.5, 0)
+ToggleButton.Position = UDim2.new(0, 0, 0, 0)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+ToggleButton.Text = "Enable Far From Ya"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+local VersionLabel = Instance.new("TextLabel", Frame)
+VersionLabel.Size = UDim2.new(1, 0, 0.5, 0)
+VersionLabel.Position = UDim2.new(0, 0, 0.5, 0)
+VersionLabel.BackgroundTransparency = 1
+VersionLabel.Text = "Version 1.0"
+VersionLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+
+local active = false
+local range = 35
+local lastTargetPos = nil
+
+-- Notification
+game.StarterGui:SetCore("SendNotification", {
+    Title = "Far From Ya ✅",
+    Text = "Script Successfully Executed",
+    Duration = 4
+})
+
+-- Main Logic
+ToggleButton.MouseButton1Click:Connect(function()
+    active = not active
+    ToggleButton.Text = active and "Disable Far From Ya" or "Enable Far From Ya"
+end)
+
+RunService.Heartbeat:Connect(function()
+    if not active or not Character or not Character.Parent then return end
+
+    local closestEnemy, closestDist = nil, math.huge
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Humanoid") and v.Health > 0 and v.Parent:FindFirstChild("HumanoidRootPart") and v ~= Humanoid then
+            local enemyRoot = v.Parent:FindFirstChild("HumanoidRootPart")
+            local dist = (enemyRoot.Position - Root.Position).Magnitude
+            if dist < closestDist and dist <= range then
+                closestEnemy = enemyRoot
+                closestDist = dist
+            end
+        end
+    end
+
+    if closestEnemy then
+        local direction = (Root.Position - closestEnemy.Position).Unit * 35
+        local targetPos = Root.Position + direction
+
+        -- Use pathfinding
+        local path = PathfindingService:CreatePath({
+            AgentRadius = 2,
+            AgentHeight = 5,
+            AgentCanJump = true,
+            AgentCanClimb = true,
+            AgentCanSwim = false
+        })
+
+        path:ComputeAsync(Root.Position, targetPos)
+
+        if path.Status == Enum.PathStatus.Complete then
+            local waypoints = path:GetWaypoints()
+            for _, waypoint in ipairs(waypoints) do
+                if not active then break end
+                Humanoid:MoveTo(waypoint.Position)
+                Humanoid.MoveToFinished:Wait()
+            end
+        end
+    end
+end)
