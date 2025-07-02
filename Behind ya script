@@ -1,92 +1,101 @@
---// Far From Ya v1.0
 local Players = game:GetService("Players")
 local PathfindingService = game:GetService("PathfindingService")
 local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local Root = Character:WaitForChild("HumanoidRootPart")
 
--- UI Setup
-local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-ScreenGui.Name = "FarFromYaGui"
-
-local Frame = Instance.new("Frame", ScreenGui)
-Frame.Size = UDim2.new(0, 180, 0, 60)
-Frame.Position = UDim2.new(0, 20, 0.5, -30)
-Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-Frame.Active = true
-Frame.Draggable = true
-Frame.BorderSizePixel = 0
-
-local ToggleButton = Instance.new("TextButton", Frame)
-ToggleButton.Size = UDim2.new(1, 0, 0.5, 0)
-ToggleButton.Position = UDim2.new(0, 0, 0, 0)
-ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-ToggleButton.Text = "Enable Far From Ya"
-ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-
-local VersionLabel = Instance.new("TextLabel", Frame)
-VersionLabel.Size = UDim2.new(1, 0, 0.5, 0)
-VersionLabel.Position = UDim2.new(0, 0, 0.5, 0)
-VersionLabel.BackgroundTransparency = 1
-VersionLabel.Text = "Version 1.0"
-VersionLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local root = character:WaitForChild("HumanoidRootPart")
 
 local active = false
-local range = 35
-local lastTargetPos = nil
+local cooldown = false
+local moveSpeed = 22
+local detectionRadius = 50
+local safeDistance = 35
+local pathUpdateInterval = 0.5
 
--- Notification
-game.StarterGui:SetCore("SendNotification", {
-    Title = "Far From Ya ✅",
-    Text = "Script Successfully Executed",
-    Duration = 4
-})
+-- GUI Creation
+local ScreenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+ScreenGui.Name = "FarFromYaGui"
 
--- Main Logic
-ToggleButton.MouseButton1Click:Connect(function()
-    active = not active
-    ToggleButton.Text = active and "Disable Far From Ya" or "Enable Far From Ya"
+local toggle = Instance.new("TextButton")
+toggle.Size = UDim2.new(0, 120, 0, 40)
+toggle.Position = UDim2.new(0, 10, 0, 10)
+toggle.Text = "Far From Ya: OFF"
+toggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggle.Parent = ScreenGui
+
+-- Escape function using Pathfinding
+local function getClosestEnemy()
+	local closest = nil
+	local shortest = math.huge
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+			local dist = (plr.Character.HumanoidRootPart.Position - root.Position).Magnitude
+			if dist < shortest then
+				shortest = dist
+				closest = plr.Character
+			end
+		end
+	end
+
+	-- Check for NPCs
+	for _, npc in pairs(workspace:GetDescendants()) do
+		if npc:IsA("Model") and npc:FindFirstChild("Humanoid") and npc:FindFirstChild("HumanoidRootPart") then
+			local dist = (npc.HumanoidRootPart.Position - root.Position).Magnitude
+			if dist < shortest then
+				shortest = dist
+				closest = npc
+			end
+		end
+	end
+
+	return closest, shortest
+end
+
+local function runAwayFrom(target)
+	local direction = (root.Position - target.Position).Unit
+	local escapePos = root.Position + direction * safeDistance
+
+	local path = PathfindingService:CreatePath({
+		AgentRadius = 2,
+		AgentHeight = 5,
+		AgentCanJump = true,
+		AgentCanClimb = true
+	})
+
+	path:ComputeAsync(root.Position, escapePos)
+
+	if path.Status == Enum.PathStatus.Complete then
+		for _, waypoint in ipairs(path:GetWaypoints()) do
+			if not active then break end
+			humanoid:MoveTo(waypoint.Position)
+			humanoid.WalkSpeed = moveSpeed
+			humanoid.MoveToFinished:Wait()
+		end
+	end
+end
+
+-- Main Loop
+task.spawn(function()
+	while true do
+		task.wait(pathUpdateInterval)
+		if active and not cooldown then
+			local enemy, dist = getClosestEnemy()
+			if enemy and dist <= detectionRadius then
+				runAwayFrom(enemy.HumanoidRootPart)
+			else
+				humanoid:MoveTo(root.Position) -- Stop moving
+			end
+		end
+	end
 end)
 
-RunService.Heartbeat:Connect(function()
-    if not active or not Character or not Character.Parent then return end
-
-    local closestEnemy, closestDist = nil, math.huge
-    for _, v in pairs(workspace:GetDescendants()) do
-        if v:IsA("Humanoid") and v.Health > 0 and v.Parent:FindFirstChild("HumanoidRootPart") and v ~= Humanoid then
-            local enemyRoot = v.Parent:FindFirstChild("HumanoidRootPart")
-            local dist = (enemyRoot.Position - Root.Position).Magnitude
-            if dist < closestDist and dist <= range then
-                closestEnemy = enemyRoot
-                closestDist = dist
-            end
-        end
-    end
-
-    if closestEnemy then
-        local direction = (Root.Position - closestEnemy.Position).Unit * 35
-        local targetPos = Root.Position + direction
-
-        -- Use pathfinding
-        local path = PathfindingService:CreatePath({
-            AgentRadius = 2,
-            AgentHeight = 5,
-            AgentCanJump = true,
-            AgentCanClimb = true,
-            AgentCanSwim = false
-        })
-
-        path:ComputeAsync(Root.Position, targetPos)
-
-        if path.Status == Enum.PathStatus.Complete then
-            local waypoints = path:GetWaypoints()
-            for _, waypoint in ipairs(waypoints) do
-                if not active then break end
-                Humanoid:MoveTo(waypoint.Position)
-                Humanoid.MoveToFinished:Wait()
-            end
-        end
-    end
+-- Button Toggle
+toggle.MouseButton1Click:Connect(function()
+	active = not active
+	toggle.Text = active and "Far From Ya: ON" or "Far From Ya: OFF"
+	toggle.BackgroundColor3 = active and Color3.fromRGB(0, 170, 0) or Color3.fromRGB(40, 40, 40)
 end)
